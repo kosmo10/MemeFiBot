@@ -15,7 +15,7 @@ from bot.config import settings
 from bot.utils import logger
 from bot.core.tapper import run_tapper
 from bot.core.registrator import register_sessions
-
+from bot.utils.codes import VideoCodes
 
 start_text = """
                                
@@ -121,11 +121,15 @@ async def process() -> None:
         await register_sessions()
 
 
-
 async def run_tasks(tg_clients: list[Client]):
     proxies = get_proxies()
     proxies_cycle = cycle(proxies) if proxies else None
-    tasks = [asyncio.create_task(run_tapper(tg_client=tg_client, proxy=next(proxies_cycle) if proxies_cycle else None))
-             for tg_client in tg_clients]
-
+    video_codes = VideoCodes()
+    tasks = [
+        asyncio.create_task(
+            run_tapper(tg_client=tg_client, video_codes=video_codes, proxy=next(proxies_cycle) if proxies_cycle else None)
+        )
+        for tg_client in tg_clients
+    ]
+    tasks.append(asyncio.create_task(video_codes.run_updater()))
     await asyncio.gather(*tasks)

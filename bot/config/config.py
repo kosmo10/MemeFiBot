@@ -1,5 +1,8 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+USER_AGENTS_FILE = "user_agents.json"
+CLAN_CHECK_FILE = 'clancheck.txt'
+FIRST_RUN_FILE = 'referral.txt'
 
 class Settings(BaseSettings):
 

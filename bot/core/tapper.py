@@ -5,9 +5,8 @@ from random import randint
 from urllib.parse import unquote
 import json
 
-import os
 import aiohttp
-import aiocfscrape
+from aiocfscrape import CloudflareScraper
 from aiohttp_proxy import ProxyConnector
 from better_proxy import Proxy
 from pyrogram import Client
@@ -17,6 +16,8 @@ from datetime import datetime, timezone
 from dateutil import parser
 
 from bot.config import settings
+from bot.config.config import USER_AGENTS_FILE
+from bot.utils.checkers import first_check_clan, set_first_run_check_clan, is_first_run, set_first_run, check_proxy
 from bot.utils.graphql import Query, OperationName
 from bot.utils.boosts import FreeBoostType, UpgradableBoostType
 from bot.core.headers import headers
@@ -24,29 +25,22 @@ from bot.core.agents import generate_random_user_agent
 
 from bot.core.TLS import TLSv1_3_BYPASS
 from bot.exceptions import InvalidSession, InvalidProtocol
-from bot.utils.codes import get_video_codes
+from bot.utils.codes import VideoCodes
 from bot.core.memefi_api import MemeFiApi
 from bot.utils.logger import SessionLogger
 
-CLAN_CHECK_FILE = 'clancheck.txt'
-FIRST_RUN_FILE = 'referral.txt'
 
 class Tapper:
-    def __init__(self, tg_client: Client, logger: SessionLogger):
+    def __init__(self, tg_client: Client, video_codes: VideoCodes, logger: SessionLogger):
         self.tg_client = tg_client
-
+        self.video_codes = video_codes
         self.log = logger
-
         self._api = MemeFiApi(logger=logger)
 
         self.session_ug_dict = self.load_user_agents() or []
         headers['User-Agent'] = self.check_user_agent()
 
-    async def generate_random_user_agent(self):
-        return generate_random_user_agent(device_type='android', browser_type='chrome')
-
     def save_user_agent(self):
-        user_agents_file_name = "user_agents.json"
 
         if not any(session['session_name'] == self.tg_client.name for session in self.session_ug_dict):
             user_agent_str = generate_random_user_agent()
@@ -55,7 +49,7 @@ class Tapper:
                 'session_name': self.tg_client.name,
                 'user_agent': user_agent_str})
 
-            with open(user_agents_file_name, 'w') as user_agents:
+            with open(USER_AGENTS_FILE, 'w') as user_agents:
                 json.dump(self.session_ug_dict, user_agents, indent=4)
 
             self.log.info("User agent saved successfully")
@@ -63,10 +57,8 @@ class Tapper:
             return user_agent_str
 
     def load_user_agents(self):
-        user_agents_file_name = "user_agents.json"
-
         try:
-            with open(user_agents_file_name, 'r') as user_agents:
+            with open(USER_AGENTS_FILE, 'r') as user_agents:
                 session_data = json.load(user_agents)
                 if isinstance(session_data, list):
                     return session_data
@@ -89,7 +81,7 @@ class Tapper:
 
         return load
 
-    async def get_tg_web_data(self, proxy: str | None):
+    async def get_tg_web_data(self, proxy: str = None):
         if proxy:
             proxy = Proxy.from_str(proxy)
             proxy_dict = dict(
@@ -103,16 +95,6 @@ class Tapper:
             proxy_dict = None
 
         self.tg_client.proxy = proxy_dict
-
-
-
-        def is_first_run():
-            return not os.path.exists(FIRST_RUN_FILE)
-
-        def set_first_run():
-            with open(FIRST_RUN_FILE, 'w') as file:
-                file.write('https://youtu.be/dQw4w9WgXcQ')
-
 
         # pupa = '/start '
         # i = 'r_bc7a351b1a'
@@ -195,13 +177,7 @@ class Tapper:
             self.log.error(f"❗️ Unknown error during Authorization: {error}")
             await asyncio.sleep(delay=5)
 
-    async def check_proxy(self, http_client: aiohttp.ClientSession, proxy: Proxy) -> None:
-        try:
-            response = await http_client.get(url='https://api.ipify.org?format=json', timeout=aiohttp.ClientTimeout(5))
-            ip = (await response.json()).get('ip')
-            self.log.info(f"Proxy IP: {ip}")
-        except Exception as error:
-            self.log.error(f"Proxy: {proxy} | Error: {error}")
+
 
     async def get_linea_wallet_balance(self, http_client: aiohttp.ClientSession, linea_wallet: str):
         try:
@@ -254,7 +230,6 @@ class Tapper:
 
         if not campaigns:
             return
-        codes = await get_video_codes()
 
         for campaign in campaigns:
             await asyncio.sleep(delay=5)
@@ -276,7 +251,7 @@ class Tapper:
                     await asyncio.sleep(delay=count_sec_need_wait)
 
                 if task['taskVerificationType'] == "SecretCode":
-                    code = codes.get(task['name']) or codes.get(campaign['name'])
+                    code = self.video_codes.get_video_code(task['name'])
                     if not code:
                         self.log.warning(f"Video: <r>{task['name']}</r> | <y>Code not found!</y>")
                         continue
@@ -317,9 +292,13 @@ class Tapper:
         conn = ProxyConnector().from_url(url=proxy, rdns=True, ssl=ssl_context) if proxy \
             else aiohttp.TCPConnector(ssl=ssl_context)
 
-        async with aiocfscrape.CloudflareScraper(headers=headers, connector=conn) as http_client:
+        async with CloudflareScraper(headers=headers, connector=conn) as http_client:
             if proxy:
-                await self.check_proxy(http_client=http_client, proxy=proxy)
+                try:
+                    ip = await check_proxy(http_client=http_client, proxy=proxy)
+                    self.log.info(f"Proxy IP: {ip}")
+                except Exception as error:
+                    self.log.error(f"Proxy: {proxy} | Error: {error}")
 
             self._api.set_http_client(http_client=http_client)
 
@@ -417,15 +396,6 @@ class Tapper:
 
                     available_energy = profile_data['currentEnergy']
                     need_energy = taps * profile_data['weaponLevel']
-
-
-
-                    def first_check_clan():
-                        return not os.path.exists(CLAN_CHECK_FILE)
-
-                    def set_first_run_check_clan():
-                        with open(CLAN_CHECK_FILE, 'w') as file:
-                            file.write('This file indicates that the script has already run once.')
 
                     if first_check_clan():
                         clan = await self._api.get_clan()
@@ -553,9 +523,7 @@ class Tapper:
                             f"⚡️ Minimum energy limit: {settings.MIN_AVAILABLE_ENERGY} | "
                             f"Boss health: <e>{boss_current_health}</e>")
                         balance = new_balance
-                        taps_status_json = json.dumps(taps_status)
                         self.log.warning(f"❌ MemeFi server error 500")
-                        #print(f"{self.session_name} | ", json.dumps(taps_status))
                         self.log.info(f"😴 Sleep 10m")
                         await asyncio.sleep(delay=600)
                         is_no_balance = True
@@ -566,7 +534,7 @@ class Tapper:
                                 and settings.APPLY_DAILY_ENERGY is True
                                 and available_energy - need_energy < settings.MIN_AVAILABLE_ENERGY):
                             self.log.info(f"😴 Sleep 7s before activating the daily energy boost")
-                            #await asyncio.sleep(delay=9)
+                            await asyncio.sleep(delay=7)
 
                             status = await self._api.apply_boost(boost_type=FreeBoostType.ENERGY)
                             if status is True:
@@ -658,10 +626,10 @@ class Tapper:
                     await asyncio.sleep(delay=sleep_between_clicks)
 
 
-async def run_tapper(tg_client: Client, proxy: str | None):
+async def run_tapper(tg_client: Client, video_codes: VideoCodes, proxy: str | None):
     session_logger = SessionLogger(tg_client.name)
     try:
-        await Tapper(tg_client=tg_client, logger=session_logger).run(proxy=proxy)
+        await Tapper(tg_client=tg_client, video_codes=video_codes, logger=session_logger).run(proxy=proxy)
     except InvalidSession:
         session_logger.error(f"❗️Invalid Session")
     except InvalidProtocol as error:
