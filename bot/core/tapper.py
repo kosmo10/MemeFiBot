@@ -25,7 +25,7 @@ from .agents import generate_random_user_agent
 
 from .TLS import TLSv1_3_BYPASS
 from bot.exceptions import InvalidSession, InvalidProtocol
-
+from bot.utils.codes import get_video_codes
 
 
 class Tapper:
@@ -687,14 +687,14 @@ class Tapper:
             logger.error(f"{self.session_name} | Unknown error while getting task by id: {str(e)}")
             return None
 
-    async def complete_task(self, http_client: aiohttp.ClientSession, user_task_id: str):
+    async def complete_task(self, http_client: aiohttp.ClientSession, user_task_id: str, code: str = None):
         try:
             json_data = {
                 'operationName': "CampaignTaskMarkAsCompleted",
                 'query': Query.CampaignTaskMarkAsCompleted,
-                'variables': {'userTaskId': user_task_id}
+                'variables': {'userTaskId': user_task_id, 'verificationCode': str(code)} if code \
+                    else  {'userTaskId': user_task_id}
             }
-
             response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
 
             response.raise_for_status()
@@ -711,6 +711,51 @@ class Tapper:
         except Exception as e:
             logger.error(f"{self.session_name} | Unknown error while completing task: {str(e)}")
             return None
+
+    async def watch_videos(self, http_client):
+        campaigns = await self.get_campaigns(http_client=http_client)
+        if campaigns is None:
+            logger.error("Campaigns list is None")
+            return
+
+        if not campaigns:
+            return
+        codes = await get_video_codes()
+
+        for campaign in campaigns:
+            await asyncio.sleep(delay=5)
+            tasks_list: list = await self.get_tasks_list(http_client=http_client, campaigns_id=campaign['id'])
+            for task in tasks_list:
+                await asyncio.sleep(delay=randint(5, 15))
+                logger.info(f"{self.session_name} | Video: <r>{task['name']}</r> | Status: <y>{task['status']}</y>")
+
+                if task['status'] != 'Verification':
+                    task = await self.verify_campaign(http_client=http_client, task_id=task['id'])
+                    logger.info(f"{self.session_name} | Video: <r>{task['name']}</r> | Start verifying")
+
+                delta_time = parser.isoparse(task['verificationAvailableAt']).timestamp() - \
+                             datetime.now(timezone.utc).timestamp()
+
+                if task['status'] == 'Verification' and delta_time > 0:
+                    count_sec_need_wait = delta_time + randint(5, 15)
+                    logger.info(f"{self.session_name} | Video: <r>{task['name']}</r> | Sleep: {int(count_sec_need_wait)}s.")
+                    await asyncio.sleep(delay=count_sec_need_wait)
+
+                if task['taskVerificationType'] == "SecretCode":
+                    code = codes.get(task['name']) or codes.get(campaign['name'])
+                    if not code:
+                        logger.warning(f"{self.session_name} | Video: <r>{task['name']}</r> | <y>Code not found!</y>")
+                        continue
+                    logger.info(f"{self.session_name} | Video: <r>{task['name']}</r> | Use code <g>{code}</g>.")
+                    complete_task = await self.complete_task(
+                        http_client=http_client, user_task_id=task['userTaskId'], code=code
+                    )
+                else:
+                    complete_task = await self.complete_task(http_client=http_client, user_task_id=task['userTaskId'])
+                message = f"<g>{complete_task.get('status')}</g>" if complete_task \
+                    else f"<r>Error from complete_task method.</r>"
+                logger.info(f"{self.session_name} | Video: <r>{task['name']}</r> | Status: {message}")
+
 
     async def update_authorization(self, http_client, proxy) -> bool:
         http_client.headers.pop("Authorization", None)
@@ -805,62 +850,9 @@ class Tapper:
                             logger.success(f"{self.session_name} | ✅ Successful setting next boss: "
                                            f"<m>{current_boss_level + 1}</m>")
 
-                        if settings.WATCH_VIDEO:
-                            task_json = await self.get_campaigns(http_client=http_client)
-                            n = 0
-                            while n < 197:
-                                campaigns_id = task_json[n]['id']
-                                if task_json is not None:
-                                    tasks_list = await self.get_tasks_list(http_client=http_client,
-                                                                           campaigns_id=campaigns_id)
-                                    name = tasks_list[0]['name']
-                                    status = tasks_list[0]['status']
-                                    logger.info(f"{self.session_name} "
-                                                f"| Video: <r>{name}</r> | Status: <y>{status}</y>")
-                                    task_id = tasks_list[0]['id']
-                                    await asyncio.sleep(delay=1)
-                                    if status == 'Verification':
-                                        logger.info(f"{self.session_name} "
-                                                    f"| Unable to complete a task, it is already in progress. <r>Skip video</r>")
-                                        n += 1
-                                        continue
-                                    if tasks_list is not None and status != 'Verification':
-                                        await asyncio.sleep(delay=2)
-                                        verify_campaign = await self.verify_campaign(http_client=http_client,
-                                                                                     task_id=task_id)
-                                        status = verify_campaign['status']
-                                        logger.info(f"{self.session_name} "
-                                                    f"| Video: <r>{name}</r> | Status: <y>{status}</y>")
-                                        logger.info(f"{self.session_name} | Waiting 5s")
-                                        await asyncio.sleep(delay=5)
-                                        if verify_campaign is not None:
-                                            get_task_by_id = await self.get_task_by_id(http_client=http_client,
-                                                                                       task_id=task_id)
-                                            user_task_id = get_task_by_id['userTaskId']
-                                            status = get_task_by_id['status']
+                    if settings.WATCH_VIDEO:
+                       await self.watch_videos(http_client=http_client)
 
-                                            sleep_time_task = max((parser.isoparse(
-                                                get_task_by_id.get('verificationAvailableAt')) - datetime.now(
-                                                timezone.utc)).total_seconds() + 5, randint(5, 15))
-
-                                            logger.info(f"{self.session_name} "
-                                                        f"| Video: <r>{name}</r> | Status: <y>{status}</y>")
-                                            logger.info(f"{self.session_name} | Waiting {sleep_time_task}s")
-                                            await asyncio.sleep(delay=sleep_time_task)
-                                            if get_task_by_id is not None:
-                                                complete_task = await self.complete_task(http_client=http_client,
-                                                                                         user_task_id=user_task_id)
-
-                                                if complete_task:
-                                                    logger.info(f"{self.session_name} "
-                                                                f"| Video: <r>{name}</r> | Status: <g>{complete_task.get('status')}</g>")
-                                                else:
-                                                    logger.warning(f"{self.session_name} "
-                                                                f"| Video: <r>{name}</r> | Status: <r>Error from complete_task method.</r>")
-                                                await asyncio.sleep(delay=3)
-                                                n += 1
-
-                    spins = profile_data.get('spinEnergyTotal', 0)
                     if settings.ROLL_CASINO:
                         while spins > settings.VALUE_SPIN:
                             await asyncio.sleep(delay=2)
