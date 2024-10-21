@@ -14,9 +14,7 @@ class MemeFiApi:
     GRAPHQL_URL: str = "https://api-gw-tg.memefi.club/graphql"
     session_name: str = "UnknownSession"
 
-    def __init__(self, url: str = None, session_name: str = None) -> None:
-        if url:
-            self.GRAPHQL_URL = url
+    def __init__(self, session_name: str = None) -> None:
         if session_name:
             self.session_name = session_name
 
@@ -416,6 +414,25 @@ class MemeFiApi:
 
             return False
 
+    async def get_bot_config(self, http_client: ClientSession):
+        try:
+            json_data = {
+                'operationName': OperationName.TapbotConfig,
+                'query': Query.TapbotConfig,
+                'variables': {}
+            }
+
+            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response.raise_for_status()
+
+            response_json = await response.json()
+            bot_config = response_json['data']['telegramGameTapbotGetConfig']
+
+            return bot_config
+        except Exception as error:
+            logger.error(f"{self.session_name} | ❗️ Unknown error while getting Bot Config: {error}")
+            await sleep(delay=9)
+
     async def claim_bot(self, http_client: ClientSession):
         try:
             json_data = {
@@ -449,3 +466,25 @@ class MemeFiApi:
             await sleep(delay=9)
 
             return False
+
+    async def play_slotmachine(self, http_client: ClientSession, spin_value: int):
+
+        try:
+            json_data = {
+                'operationName': OperationName.SpinSlotMachine,
+                'query': Query.SpinSlotMachine,
+                'variables': {
+                    'payload': {
+                        'spinsCount': spin_value
+                    }
+                }
+            }
+
+            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response_json = await response.json()
+            play_data = response_json.get('data', {}).get('slotMachineSpinV2', {})
+
+            return play_data
+        except Exception as error:
+            logger.error(f"{self.session_name} | ❗️ Unknown error when Play Casino: {error}")
+            return {}

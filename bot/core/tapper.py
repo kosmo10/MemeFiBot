@@ -36,9 +36,9 @@ class Tapper:
         self.session_name = tg_client.name
         self.tg_client = tg_client
 
-        self._api = MemeFiApi()
-
-        self.GRAPHQL_URL = 'https://api-gw-tg.memefi.club/graphql'
+        self._api = MemeFiApi(
+            session_name=self.session_name
+        )
 
         self.session_ug_dict = self.load_user_agents() or []
         headers['User-Agent'] = self.check_user_agent()
@@ -196,39 +196,6 @@ class Tapper:
             logger.error(f"{self.session_name} | ❗️ Unknown error during Authorization: {error}")
             await asyncio.sleep(delay=5)
 
-
-
-
-
-
-
-
-
-
-
-    async def get_bot_config(self, http_client: aiohttp.ClientSession):
-        try:
-            json_data = {
-                'operationName': OperationName.TapbotConfig,
-                'query': Query.TapbotConfig,
-                'variables': {}
-            }
-
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
-            response.raise_for_status()
-
-            response_json = await response.json()
-            bot_config = response_json['data']['telegramGameTapbotGetConfig']
-
-            return bot_config
-        except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error while getting Bot Config: {error}")
-            await asyncio.sleep(delay=9)
-
-
-
-
-
     async def check_proxy(self, http_client: aiohttp.ClientSession, proxy: Proxy) -> None:
         try:
             response = await http_client.get(url='https://api.ipify.org?format=json', timeout=aiohttp.ClientTimeout(5))
@@ -236,30 +203,6 @@ class Tapper:
             logger.info(f"{self.session_name} | Proxy IP: {ip}")
         except Exception as error:
             logger.error(f"{self.session_name} | Proxy: {proxy} | Error: {error}")
-
-    async def play_slotmachine(self, http_client: aiohttp.ClientSession):
-        spin_value = settings.VALUE_SPIN
-        try:
-            json_data = {
-                'operationName': OperationName.SpinSlotMachine,
-                'query': Query.SpinSlotMachine,
-                'variables': {
-                    'payload': {
-                        'spinsCount': spin_value
-                    }
-                }
-            }
-
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
-            response_json = await response.json()
-            play_data = response_json.get('data', {}).get('slotMachineSpinV2', {})
-
-            return play_data
-        except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error when Play Casino: {error}")
-            return {}
-
-
 
     async def get_linea_wallet_balance(self, http_client: aiohttp.ClientSession, linea_wallet: str):
         try:
@@ -304,9 +247,6 @@ class Tapper:
         except Exception as error:
             logger.error(f"{self.session_name} | Error getting ETH price: {error}")
             return None
-
-
-
 
     async def watch_videos(self, http_client):
         campaigns = await self._api.get_campaigns(http_client=http_client)
@@ -452,7 +392,7 @@ class Tapper:
                     if settings.ROLL_CASINO:
                         while spins > settings.VALUE_SPIN:
                             await asyncio.sleep(delay=2)
-                            play_data = await self.play_slotmachine(http_client=http_client)
+                            play_data = await self._api.play_slotmachine(http_client=http_client, spin_value=settings.VALUE_SPIN)
                             reward_amount = play_data.get('spinResults', [{}])[0].get('rewardAmount', 0)
                             reward_type = play_data.get('spinResults', [{}])[0].get('rewardType', 'NO')
                             spins = play_data.get('gameConfig', {}).get('spinEnergyTotal', 0)
@@ -476,7 +416,7 @@ class Tapper:
                     if taps > boss_current_health:
                         taps = boss_max_health - boss_current_health - 10
                         return taps
-                    bot_config = await self.get_bot_config(http_client=http_client)
+                    bot_config = await self._api.get_bot_config(http_client=http_client)
                     telegram_me = await self._api.get_telegram_me(http_client=http_client)
 
                     available_energy = profile_data['currentEnergy']
@@ -526,12 +466,12 @@ class Tapper:
                         await self._api.upgrade_boost(http_client=http_client, boost_type=UpgradableBoostType.TAPBOT)
                         logger.info(f"{self.session_name} | 👉 Tapbot was purchased - 😴 Sleep 7s")
                         await asyncio.sleep(delay=9)
-                        bot_config = await self.get_bot_config(http_client=http_client)
+                        bot_config = await self._api.get_bot_config(http_client=http_client)
 
                     if bot_config['isPurchased'] is True:
                         if bot_config['usedAttempts'] < bot_config['totalAttempts'] and not bot_config['endsAt']:
                             await self._api.start_bot(http_client=http_client)
-                            bot_config = await self.get_bot_config(http_client=http_client)
+                            bot_config = await self._api.get_bot_config(http_client=http_client)
                             logger.info(f"{self.session_name} | 👉 Tapbot is started")
 
                         else:
@@ -547,7 +487,7 @@ class Tapper:
                                     await self._api.start_bot(http_client=http_client)
                                     logger.info(f"{self.session_name} | 👉 Tapbot is started - 😴 Sleep 7s")
                                     await asyncio.sleep(delay=9)
-                                    bot_config = await self.get_bot_config(http_client=http_client)
+                                    bot_config = await self._api.get_bot_config(http_client=http_client)
 
                     if active_turbo:
                         taps += randint(a=settings.ADD_TAPS_ON_TURBO[0], b=settings.ADD_TAPS_ON_TURBO[1])
