@@ -6,18 +6,16 @@ from asyncio import sleep
 from bot.exceptions import InvalidProtocol
 from bot.utils.boosts import FreeBoostType, UpgradableBoostType
 from bot.utils.graphql import OperationName, Query
-from bot.utils import logger
+from bot.utils.logger import SessionLogger
 
 
 class MemeFiApi:
 
     GRAPHQL_URL: str = "https://api-gw-tg.memefi.club/graphql"
-    session_name: str = "UnknownSession"
     _http_client: ClientSession
 
-    def __init__(self, session_name: str = None) -> None:
-        if session_name:
-            self.session_name = session_name
+    def __init__(self, logger: SessionLogger) -> None:
+        self.log = logger
 
     def set_http_client(self, http_client: ClientSession):
         self._http_client = http_client
@@ -41,7 +39,7 @@ class MemeFiApi:
 
                 return access_token
             except Exception as error:
-                logger.error(f"{self.session_name} | ❗️ Unknown error while getting Access Token: {error}")
+                self.log.error(f"❗️ Unknown error while getting Access Token: {error}")
                 await sleep(delay=15)
 
         return ""
@@ -65,7 +63,7 @@ class MemeFiApi:
 
             return profile_data
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️Unknown error while getting Profile Data: {error}")
+            self.log.error(f"❗️Unknown error while getting Profile Data: {error}")
             await sleep(delay=9)
 
     async def get_telegram_me(self):
@@ -88,7 +86,7 @@ class MemeFiApi:
 
             return me
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error while getting Telegram Me: {error}")
+            self.log.error(f"❗️ Unknown error while getting Telegram Me: {error}")
             await sleep(delay=3)
 
             return {}
@@ -111,7 +109,7 @@ class MemeFiApi:
                 linea_wallet = response_json.get('data', {}).get('telegramMemefiWallet', {}).get('walletAddress', {})
                 return linea_wallet
         except Exception as error:
-                logger.error(f"{self.session_name} | ❗️ Unknown error when Get Wallet: {error}")
+                self.log.error(f"❗️ Unknown error when Get Wallet: {error}")
                 return None
 
     async def apply_boost(self, boost_type: FreeBoostType):
@@ -129,7 +127,7 @@ class MemeFiApi:
 
             return True
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error while Apply {boost_type} Boost: {error}")
+            self.log.error(f"❗️ Unknown error while Apply {boost_type} Boost: {error}")
             await sleep(delay=9)
 
             return False
@@ -170,7 +168,7 @@ class MemeFiApi:
 
             return True
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️Unknown error while Setting Next Boss: {error}")
+            self.log.error(f"❗️Unknown error while Setting Next Boss: {error}")
             await sleep(delay=9)
 
             return False
@@ -211,7 +209,7 @@ class MemeFiApi:
             profile_data = response_json['data']['telegramGameProcessTapsBatch']
             return profile_data
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error when Tapping: {error}")
+            self.log.error(f"❗️ Unknown error when Tapping: {error}")
             await sleep(delay=9)
 
     async def get_campaigns(self):
@@ -227,14 +225,14 @@ class MemeFiApi:
             data = await response.json()
 
             if 'errors' in data:
-                logger.error(f"{self.session_name} | Error while getting campaigns: {data['errors'][0]['message']}")
+                self.log.error(f"Error while getting campaigns: {data['errors'][0]['message']}")
                 return None
 
             campaigns = data.get('data', {}).get('campaignLists', {}).get('normal', [])
             return [campaign for campaign in campaigns if 'youtube' in campaign.get('description', '').lower()]
 
         except Exception as e:
-            logger.error(f"{self.session_name} | Unknown error while getting campaigns: {str(e)}")
+            self.log.error(f"Unknown error while getting campaigns: {str(e)}")
             return {}
 
     async def verify_campaign(self, task_id: str):
@@ -251,12 +249,12 @@ class MemeFiApi:
             data = await response.json()
 
             if 'errors' in data:
-                logger.error(f"{self.session_name} | Error while verifying task: {data['errors'][0]['message']}")
+                self.log.error(f"Error while verifying task: {data['errors'][0]['message']}")
                 return None
 
             return data.get('data', {}).get('campaignTaskMoveToVerificationV2')
         except Exception as e:
-            logger.error(f"{self.session_name} | Unknown error while verifying task: {str(e)}")
+            self.log.error(f"Unknown error while verifying task: {str(e)}")
             return None
 
     async def complete_task(self, user_task_id: str, code: str = None):
@@ -275,13 +273,13 @@ class MemeFiApi:
 
 
             if 'errors' in data:
-                logger.error(f"{self.session_name} | Error while completing task: {data['errors'][0]['message']}")
+                self.log.error(f"Error while completing task: {data['errors'][0]['message']}")
                 return None
 
             return data.get('data', {}).get('campaignTaskMarkAsCompleted')
 
         except Exception as e:
-            logger.error(f"{self.session_name} | Unknown error while completing task: {str(e)}")
+            self.log.error(f"Unknown error while completing task: {str(e)}")
             return None
 
     async def get_tasks_list(self, campaigns_id: str):
@@ -298,13 +296,13 @@ class MemeFiApi:
             data = await response.json()
 
             if 'errors' in data:
-                logger.error(f"{self.session_name} | Error while getting tasks: {data['errors'][0]['message']}")
+                self.log.error(f"Error while getting tasks: {data['errors'][0]['message']}")
                 return None
 
             return data.get('data', {}).get('campaignTasks', [])
 
         except Exception as e:
-            logger.error(f"{self.session_name} | Unknown error while getting tasks: {str(e)}")
+            self.log.error(f"Unknown error while getting tasks: {str(e)}")
             return None
 
     async def get_task_by_id(self, task_id: str):
@@ -321,13 +319,12 @@ class MemeFiApi:
             data = await response.json()
 
             if 'errors' in data:
-                logger.error(
-                    f"{self.session_name} | Error while getting task by id: {data['errors'][0]['message']}")
+                self.log.error(f"Error while getting task by id: {data['errors'][0]['message']}")
                 return None
 
             return data.get('data', {}).get('campaignTaskGetConfig')
         except Exception as e:
-            logger.error(f"{self.session_name} | Unknown error while getting task by id: {str(e)}")
+            self.log.error(f"Unknown error while getting task by id: {str(e)}")
             return None
 
     async def get_clan(self):
@@ -349,7 +346,7 @@ class MemeFiApi:
                 return False
 
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️Unknown error while get clan: {error}")
+            self.log.error(f"❗️Unknown error while get clan: {error}")
             await sleep(delay=9)
             return False
 
@@ -369,7 +366,7 @@ class MemeFiApi:
                     return True
 
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️Unknown error while clan leave: {error}")
+            self.log.error(f"❗️Unknown error while clan leave: {error}")
             await sleep(delay=9)
             return False
 
@@ -395,7 +392,7 @@ class MemeFiApi:
                     return False
 
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error while clan join: {error}")
+            self.log.error(f"❗️ Unknown error while clan join: {error}")
             await sleep(delay=9)
             return False
 
@@ -412,7 +409,7 @@ class MemeFiApi:
 
             return True
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error while Starting Bot: {error}")
+            self.log.error(f"❗️ Unknown error while Starting Bot: {error}")
             await sleep(delay=9)
 
             return False
@@ -433,7 +430,7 @@ class MemeFiApi:
 
             return bot_config
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error while getting Bot Config: {error}")
+            self.log.error(f"❗️ Unknown error while getting Bot Config: {error}")
             await sleep(delay=9)
 
     async def claim_bot(self):
@@ -465,7 +462,7 @@ class MemeFiApi:
 
             return True
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error while Claiming Referral Bonus: {error}")
+            self.log.error(f"❗️ Unknown error while Claiming Referral Bonus: {error}")
             await sleep(delay=9)
 
             return False
@@ -489,5 +486,5 @@ class MemeFiApi:
 
             return play_data
         except Exception as error:
-            logger.error(f"{self.session_name} | ❗️ Unknown error when Play Casino: {error}")
+            self.log.error(f"❗️ Unknown error when Play Casino: {error}")
             return {}
