@@ -11,10 +11,9 @@ import aiocfscrape
 from aiohttp_proxy import ProxyConnector
 from better_proxy import Proxy
 from pyrogram import Client
-from pyrogram.errors import Unauthorized, UserDeactivated, AuthKeyUnregistered, FloodWait
+from pyrogram.errors import Unauthorized, UserDeactivated, AuthKeyUnregistered
 from pyrogram.raw.functions.messages import RequestWebView
-from pyrogram.raw import types
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from dateutil import parser
 
 from bot.config import settings
@@ -713,6 +712,25 @@ class Tapper:
             logger.error(f"{self.session_name} | Unknown error while completing task: {str(e)}")
             return None
 
+    async def update_authorization(self, http_client, proxy) -> bool:
+        http_client.headers.pop("Authorization", None)
+
+        tg_web_data = await self.get_tg_web_data(proxy=proxy)
+
+        if not tg_web_data:
+            logger.info(f"{self.session_name} | Log out!")
+            raise Exception("Account is not authorized")
+
+        access_token = await self.get_access_token(http_client=http_client, tg_web_data=tg_web_data)
+
+        if not access_token:
+            return False
+
+        http_client.headers["Authorization"] = f"Bearer {access_token}"
+
+        await self.get_telegram_me(http_client=http_client)
+        return True
+
     async def run(self, proxy: str | None):
         access_token_created_time = 0
         turbo_time = 0
@@ -726,83 +744,66 @@ class Tapper:
             if proxy:
                 await self.check_proxy(http_client=http_client, proxy=proxy)
 
-
             while True:
                 noBalance = False
                 try:
                     if time() - access_token_created_time >= 5400:
-                        http_client.headers.pop("Authorization", None)
-
-                        tg_web_data = await self.get_tg_web_data(proxy=proxy)
-
-                        if not tg_web_data:
-                            logger.info(f"{self.session_name} | Log out!")
-                            return
-
-                        access_token = await self.get_access_token(http_client=http_client, tg_web_data=tg_web_data)
-
-                        if not access_token:
+                        is_success = await self.update_authorization(http_client=http_client, proxy=proxy)
+                        if not is_success:
                             await asyncio.sleep(delay=5)
                             continue
-
-                        http_client.headers["Authorization"] = f"Bearer {access_token}"
-
                         access_token_created_time = time()
 
-                        await self.get_telegram_me(http_client=http_client)
+                    profile_data = await self.get_profile_data(http_client=http_client)
 
-                        profile_data = await self.get_profile_data(http_client=http_client)
+                    if not profile_data:
+                        await asyncio.sleep(delay=5)
+                        continue
 
-                        if not profile_data:
-                            continue
+                    balance = profile_data.get('coinsAmount', 0)
+                    nonce = profile_data.get('nonce', '')
+                    current_boss = profile_data['currentBoss']
+                    current_boss_level = current_boss['level']
+                    boss_max_health = current_boss['maxHealth']
+                    boss_current_health = current_boss['currentHealth']
+                    spins = profile_data.get('spinEnergyTotal', 0)
 
-                        balance = profile_data.get('coinsAmount', 0)
+                    logger.info(f"{self.session_name} | Current boss level: <m>{current_boss_level}</m> | "
+                                f"Boss health: <e>{boss_current_health}</e> out of <r>{boss_max_health}</r> | "
+                                f"Balance: <c>{balance}</c> | Spins: <le>{spins}</le>")
 
-                        nonce = profile_data.get('nonce', '')
+                    if settings.USE_RANDOM_DELAY_IN_RUN:
+                        random_delay = random.randint(settings.RANDOM_DELAY_IN_RUN[0],
+                                                      settings.RANDOM_DELAY_IN_RUN[1])
+                        logger.info(f"{self.session_name} | Bot will start in <y>{random_delay}s</y>")
+                        await asyncio.sleep(random_delay)
 
-                        current_boss = profile_data['currentBoss']
-                        current_boss_level = current_boss['level']
-                        boss_max_health = current_boss['maxHealth']
-                        boss_current_health = current_boss['currentHealth']
+                    if settings.LINEA_WALLET is True:
+                        linea_wallet = await self.wallet_check(http_client=http_client)
+                        logger.info(f"{self.session_name} | 💳 Linea wallet address: <y>{linea_wallet}</y>")
+                        if settings.LINEA_SHOW_BALANCE:
+                            if settings.LINEA_API != '':
+                                balance_eth = await self.get_linea_wallet_balance(http_client=http_client,
+                                                                                  linea_wallet=linea_wallet)
+                                eth_price = await self.get_eth_price(http_client=http_client,
+                                                                     balance_eth=balance_eth)
+                                logger.info(f"{self.session_name} | ETH Balance: <g>{balance_eth}</g> | "
+                                            f"USD Balance: <e>{eth_price}</e>")
+                            elif settings.LINEA_API == '':
+                                logger.info(f"{self.session_name} | "
+                                            f"💵 LINEA_API must be specified to show the balance")
+                                await asyncio.sleep(delay=3)
 
-                        spins = profile_data.get('spinEnergyTotal', 0)
+                    if boss_current_health == 0:
+                        logger.info(
+                            f"{self.session_name} | 👉 Setting next boss: <m>{current_boss_level + 1}</m> lvl")
+                        logger.info(f"{self.session_name} | 😴 Sleep 10s")
+                        await asyncio.sleep(delay=10)
 
-                        logger.info(f"{self.session_name} | Current boss level: <m>{current_boss_level}</m> | "
-                                    f"Boss health: <e>{boss_current_health}</e> out of <r>{boss_max_health}</r> | "
-                                    f"Balance: <c>{balance}</c> | Spins: <le>{spins}</le>")
-
-                        if settings.USE_RANDOM_DELAY_IN_RUN:
-                            random_delay = random.randint(settings.RANDOM_DELAY_IN_RUN[0],
-                                                          settings.RANDOM_DELAY_IN_RUN[1])
-                            logger.info(f"{self.session_name} | Bot will start in <y>{random_delay}s</y>")
-                            await asyncio.sleep(random_delay)
-
-                            if settings.LINEA_WALLET is True:
-                                linea_wallet = await self.wallet_check(http_client=http_client)
-                                logger.info(f"{self.session_name} | 💳 Linea wallet address: <y>{linea_wallet}</y>")
-                                if settings.LINEA_SHOW_BALANCE:
-                                    if settings.LINEA_API != '':
-                                        balance_eth = await self.get_linea_wallet_balance(http_client=http_client,
-                                                                                          linea_wallet=linea_wallet)
-                                        eth_price = await self.get_eth_price(http_client=http_client,
-                                                                             balance_eth=balance_eth)
-                                        logger.info(f"{self.session_name} | ETH Balance: <g>{balance_eth}</g> | "
-                                                    f"USD Balance: <e>{eth_price}</e>")
-                                    elif settings.LINEA_API == '':
-                                        logger.info(f"{self.session_name} | "
-                                                    f"💵 LINEA_API must be specified to show the balance")
-                                        await asyncio.sleep(delay=3)
-
-                        if boss_current_health == 0:
-                            logger.info(
-                                f"{self.session_name} | 👉 Setting next boss: <m>{current_boss_level + 1}</m> lvl")
-                            logger.info(f"{self.session_name} | 😴 Sleep 10s")
-                            await asyncio.sleep(delay=10)
-
-                            status = await self.set_next_boss(http_client=http_client)
-                            if status is True:
-                                logger.success(f"{self.session_name} | ✅ Successful setting next boss: "
-                                               f"<m>{current_boss_level + 1}</m>")
+                        status = await self.set_next_boss(http_client=http_client)
+                        if status is True:
+                            logger.success(f"{self.session_name} | ✅ Successful setting next boss: "
+                                           f"<m>{current_boss_level + 1}</m>")
 
                         if settings.WATCH_VIDEO:
                             task_json = await self.get_campaigns(http_client=http_client)
