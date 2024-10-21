@@ -31,6 +31,7 @@ async def get_video_codes() -> dict[str, str]:
         for code in codes_data:
             codes[code["name"]] = code["code"]
     codes_urls = [
+        "https://raw.githubusercontent.com/ArthurKoba/MemeFiBot/main/codes.json",
         "https://raw.githubusercontent.com/sirbiprod/MemeFiBot/main/codes.json"
     ]
     async with ClientSession() as session:
