@@ -13,16 +13,19 @@ class MemeFiApi:
 
     GRAPHQL_URL: str = "https://api-gw-tg.memefi.club/graphql"
     session_name: str = "UnknownSession"
+    _http_client: ClientSession
 
     def __init__(self, session_name: str = None) -> None:
         if session_name:
             self.session_name = session_name
 
+    def set_http_client(self, http_client: ClientSession):
+        self._http_client = http_client
 
-    async def get_access_token(self, http_client: ClientSession, tg_web_data: dict[str]):
+    async def get_access_token(self, tg_web_data: dict[str]):
         for _ in range(2):
             try:
-                response = await http_client.post(url=self.GRAPHQL_URL, json=tg_web_data)
+                response = await self._http_client.post(url=self.GRAPHQL_URL, json=tg_web_data)
                 response.raise_for_status()
 
                 response_json = await response.json()
@@ -43,7 +46,7 @@ class MemeFiApi:
 
         return ""
 
-    async def get_profile_data(self, http_client: ClientSession):
+    async def get_profile_data(self):
         try:
             json_data = {
                 'operationName': OperationName.QUERY_GAME_CONFIG,
@@ -51,7 +54,7 @@ class MemeFiApi:
                 'variables': {}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
             response_json = await response.json()
 
@@ -65,7 +68,7 @@ class MemeFiApi:
             logger.error(f"{self.session_name} | ❗️Unknown error while getting Profile Data: {error}")
             await sleep(delay=9)
 
-    async def get_telegram_me(self, http_client: ClientSession):
+    async def get_telegram_me(self):
         try:
             json_data = {
                 'operationName': OperationName.QueryTelegramUserMe,
@@ -73,7 +76,7 @@ class MemeFiApi:
                 'variables': {}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             response_json = await response.json()
@@ -90,14 +93,14 @@ class MemeFiApi:
 
             return {}
 
-    async def wallet_check(self, http_client: ClientSession):
+    async def wallet_check(self):
         try:
             json_data = {
                 'operationName': OperationName.TelegramMemefiWallet,
                 'query': Query.TelegramMemefiWallet,
                 'variables': {}
             }
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response_json = await response.json()
             no_wallet_response = {'data': {'telegramMemefiWallet': None}}
             if response_json == no_wallet_response:
@@ -111,7 +114,7 @@ class MemeFiApi:
                 logger.error(f"{self.session_name} | ❗️ Unknown error when Get Wallet: {error}")
                 return None
 
-    async def apply_boost(self, http_client: ClientSession, boost_type: FreeBoostType):
+    async def apply_boost(self, boost_type: FreeBoostType):
         try:
             json_data = {
                 'operationName': OperationName.telegramGameActivateBooster,
@@ -121,7 +124,7 @@ class MemeFiApi:
                 }
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             return True
@@ -131,7 +134,7 @@ class MemeFiApi:
 
             return False
 
-    async def upgrade_boost(self, http_client: ClientSession, boost_type: UpgradableBoostType):
+    async def upgrade_boost(self, boost_type: UpgradableBoostType):
         try:
             json_data = {
                 'operationName': OperationName.telegramGamePurchaseUpgrade,
@@ -141,7 +144,7 @@ class MemeFiApi:
                 }
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             response_json = await response.json()
@@ -153,7 +156,7 @@ class MemeFiApi:
         except Exception:
             return False
 
-    async def set_next_boss(self, http_client: ClientSession):
+    async def set_next_boss(self):
         try:
             json_data = {
                 'operationName': OperationName.telegramGameSetNextBoss,
@@ -161,7 +164,7 @@ class MemeFiApi:
                 'variables': {}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
             response_json = await response.json()
 
@@ -172,7 +175,7 @@ class MemeFiApi:
 
             return False
 
-    async def send_taps(self, http_client: ClientSession, nonce: str, taps: int):
+    async def send_taps(self, nonce: str, taps: int):
         try:
             vectorArray = []
             for tap in range(taps):
@@ -194,7 +197,7 @@ class MemeFiApi:
                 }
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             response_json = await response.json()
@@ -211,14 +214,14 @@ class MemeFiApi:
             logger.error(f"{self.session_name} | ❗️ Unknown error when Tapping: {error}")
             await sleep(delay=9)
 
-    async def get_campaigns(self, http_client: ClientSession):
+    async def get_campaigns(self):
         try:
             json_data = {
                 'operationName': "CampaignLists",
                 'query': Query.CampaignLists,
                 'variables': {}
             }
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             data = await response.json()
@@ -234,7 +237,7 @@ class MemeFiApi:
             logger.error(f"{self.session_name} | Unknown error while getting campaigns: {str(e)}")
             return {}
 
-    async def verify_campaign(self, http_client: ClientSession, task_id: str):
+    async def verify_campaign(self, task_id: str):
         try:
             json_data = {
                 'operationName': "CampaignTaskToVerification",
@@ -242,7 +245,7 @@ class MemeFiApi:
                 'variables': {'taskConfigId': task_id}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             data = await response.json()
@@ -256,7 +259,7 @@ class MemeFiApi:
             logger.error(f"{self.session_name} | Unknown error while verifying task: {str(e)}")
             return None
 
-    async def complete_task(self, http_client: ClientSession, user_task_id: str, code: str = None):
+    async def complete_task(self, user_task_id: str, code: str = None):
         try:
             json_data = {
                 'operationName': "CampaignTaskMarkAsCompleted",
@@ -264,7 +267,7 @@ class MemeFiApi:
                 'variables': {'userTaskId': user_task_id, 'verificationCode': str(code)} if code \
                     else  {'userTaskId': user_task_id}
             }
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
 
             response.raise_for_status()
 
@@ -281,7 +284,7 @@ class MemeFiApi:
             logger.error(f"{self.session_name} | Unknown error while completing task: {str(e)}")
             return None
 
-    async def get_tasks_list(self, http_client: ClientSession, campaigns_id: str):
+    async def get_tasks_list(self, campaigns_id: str):
         try:
             json_data = {
                 'operationName': "GetTasksList",
@@ -289,7 +292,7 @@ class MemeFiApi:
                 'variables': {'campaignId': campaigns_id}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             data = await response.json()
@@ -304,7 +307,7 @@ class MemeFiApi:
             logger.error(f"{self.session_name} | Unknown error while getting tasks: {str(e)}")
             return None
 
-    async def get_task_by_id(self, http_client: ClientSession, task_id: str):
+    async def get_task_by_id(self, task_id: str):
         try:
             json_data = {
                 'operationName': "GetTaskById",
@@ -312,7 +315,7 @@ class MemeFiApi:
                 'variables': {'taskId': task_id}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             data = await response.json()
@@ -327,7 +330,7 @@ class MemeFiApi:
             logger.error(f"{self.session_name} | Unknown error while getting task by id: {str(e)}")
             return None
 
-    async def get_clan(self, http_client: ClientSession):
+    async def get_clan(self):
         try:
             json_data = {
                 'operationName': OperationName.ClanMy,
@@ -335,7 +338,7 @@ class MemeFiApi:
                 'variables': {}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
             response_json = await response.json()
 
@@ -350,7 +353,7 @@ class MemeFiApi:
             await sleep(delay=9)
             return False
 
-    async def leave_clan(self, http_client: ClientSession):
+    async def leave_clan(self):
         try:
             json_data = {
                 'operationName': OperationName.Leave,
@@ -358,7 +361,7 @@ class MemeFiApi:
                 'variables': {}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
             response_json = await response.json()
             if response_json['data']:
@@ -370,7 +373,7 @@ class MemeFiApi:
             await sleep(delay=9)
             return False
 
-    async def join_clan(self, http_client: ClientSession):
+    async def join_clan(self):
         try:
             json_data = {
                 'operationName': OperationName.Join,
@@ -381,7 +384,7 @@ class MemeFiApi:
             }
 
             while True:
-                response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+                response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
                 response.raise_for_status()
                 response_json = await response.json()
                 if response_json['data']:
@@ -396,7 +399,7 @@ class MemeFiApi:
             await sleep(delay=9)
             return False
 
-    async def start_bot(self, http_client: ClientSession):
+    async def start_bot(self):
         try:
             json_data = {
                 'operationName': OperationName.TapbotStart,
@@ -404,7 +407,7 @@ class MemeFiApi:
                 'variables': {}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             return True
@@ -414,7 +417,7 @@ class MemeFiApi:
 
             return False
 
-    async def get_bot_config(self, http_client: ClientSession):
+    async def get_bot_config(self):
         try:
             json_data = {
                 'operationName': OperationName.TapbotConfig,
@@ -422,7 +425,7 @@ class MemeFiApi:
                 'variables': {}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             response_json = await response.json()
@@ -433,7 +436,7 @@ class MemeFiApi:
             logger.error(f"{self.session_name} | ❗️ Unknown error while getting Bot Config: {error}")
             await sleep(delay=9)
 
-    async def claim_bot(self, http_client: ClientSession):
+    async def claim_bot(self):
         try:
             json_data = {
                 'operationName': OperationName.TapbotClaim,
@@ -441,7 +444,7 @@ class MemeFiApi:
                 'variables': {}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
             response_json = await response.json()
             data = response_json['data']["telegramGameTapbotClaim"]
@@ -449,7 +452,7 @@ class MemeFiApi:
         except Exception as error:
             return {"isClaimed": True, "data": None}
 
-    async def claim_referral_bonus(self, http_client: ClientSession):
+    async def claim_referral_bonus(self):
         try:
             json_data = {
                 'operationName': OperationName.Mutation,
@@ -457,7 +460,7 @@ class MemeFiApi:
                 'variables': {}
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response.raise_for_status()
 
             return True
@@ -467,7 +470,7 @@ class MemeFiApi:
 
             return False
 
-    async def play_slotmachine(self, http_client: ClientSession, spin_value: int):
+    async def play_slotmachine(self, spin_value: int):
 
         try:
             json_data = {
@@ -480,7 +483,7 @@ class MemeFiApi:
                 }
             }
 
-            response = await http_client.post(url=self.GRAPHQL_URL, json=json_data)
+            response = await self._http_client.post(url=self.GRAPHQL_URL, json=json_data)
             response_json = await response.json()
             play_data = response_json.get('data', {}).get('slotMachineSpinV2', {})
 

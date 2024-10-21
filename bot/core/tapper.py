@@ -249,7 +249,7 @@ class Tapper:
             return None
 
     async def watch_videos(self, http_client):
-        campaigns = await self._api.get_campaigns(http_client=http_client)
+        campaigns = await self._api.get_campaigns()
         if campaigns is None:
             logger.error("Campaigns list is None")
             return
@@ -260,13 +260,13 @@ class Tapper:
 
         for campaign in campaigns:
             await asyncio.sleep(delay=5)
-            tasks_list: list = await self._api.get_tasks_list(http_client=http_client, campaigns_id=campaign['id'])
+            tasks_list: list = await self._api.get_tasks_list(campaigns_id=campaign['id'])
             for task in tasks_list:
                 await asyncio.sleep(delay=randint(5, 15))
                 logger.info(f"{self.session_name} | Video: <r>{task['name']}</r> | Status: <y>{task['status']}</y>")
 
                 if task['status'] != 'Verification':
-                    task = await self._api.verify_campaign(http_client=http_client, task_id=task['id'])
+                    task = await self._api.verify_campaign(task_id=task['id'])
                     logger.info(f"{self.session_name} | Video: <r>{task['name']}</r> | Start verifying")
 
                 delta_time = parser.isoparse(task['verificationAvailableAt']).timestamp() - \
@@ -283,11 +283,9 @@ class Tapper:
                         logger.warning(f"{self.session_name} | Video: <r>{task['name']}</r> | <y>Code not found!</y>")
                         continue
                     logger.info(f"{self.session_name} | Video: <r>{task['name']}</r> | Use code <g>{code}</g>.")
-                    complete_task = await self._api.complete_task(
-                        http_client=http_client, user_task_id=task['userTaskId'], code=code
-                    )
+                    complete_task = await self._api.complete_task(user_task_id=task['userTaskId'], code=code)
                 else:
-                    complete_task = await self._api.complete_task(http_client=http_client, user_task_id=task['userTaskId'])
+                    complete_task = await self._api.complete_task(user_task_id=task['userTaskId'])
                 message = f"<g>{complete_task.get('status')}</g>" if complete_task \
                     else f"<r>Error from complete_task method.</r>"
                 logger.info(f"{self.session_name} | Video: <r>{task['name']}</r> | Status: {message}")
@@ -302,14 +300,14 @@ class Tapper:
             logger.info(f"{self.session_name} | Log out!")
             raise Exception("Account is not authorized")
 
-        access_token = await self._api.get_access_token(http_client=http_client, tg_web_data=tg_web_data)
+        access_token = await self._api.get_access_token(tg_web_data=tg_web_data)
 
         if not access_token:
             return False
 
         http_client.headers["Authorization"] = f"Bearer {access_token}"
 
-        await self._api.get_telegram_me(http_client=http_client)
+        await self._api.get_telegram_me()
         return True
 
     async def run(self, proxy: str | None):
@@ -325,6 +323,8 @@ class Tapper:
             if proxy:
                 await self.check_proxy(http_client=http_client, proxy=proxy)
 
+            self._api.set_http_client(http_client=http_client)
+
             while True:
                 is_no_balance = False
                 try:
@@ -335,7 +335,7 @@ class Tapper:
                             continue
                         access_token_created_time = time()
 
-                    profile_data = await self._api.get_profile_data(http_client=http_client)
+                    profile_data = await self._api.get_profile_data()
 
                     if not profile_data:
                         await asyncio.sleep(delay=5)
@@ -360,7 +360,7 @@ class Tapper:
                         await asyncio.sleep(random_delay)
 
                     if settings.LINEA_WALLET is True:
-                        linea_wallet = await self._api.wallet_check(http_client=http_client)
+                        linea_wallet = await self._api.wallet_check()
                         logger.info(f"{self.session_name} | 💳 Linea wallet address: <y>{linea_wallet}</y>")
                         if settings.LINEA_SHOW_BALANCE:
                             if settings.LINEA_API != '':
@@ -381,7 +381,7 @@ class Tapper:
                         logger.info(f"{self.session_name} | 😴 Sleep 10s")
                         await asyncio.sleep(delay=10)
 
-                        status = await self._api.set_next_boss(http_client=http_client)
+                        status = await self._api.set_next_boss()
                         if status is True:
                             logger.success(f"{self.session_name} | ✅ Successful setting next boss: "
                                            f"<m>{current_boss_level + 1}</m>")
@@ -392,7 +392,7 @@ class Tapper:
                     if settings.ROLL_CASINO:
                         while spins > settings.VALUE_SPIN:
                             await asyncio.sleep(delay=2)
-                            play_data = await self._api.play_slotmachine(http_client=http_client, spin_value=settings.VALUE_SPIN)
+                            play_data = await self._api.play_slotmachine(spin_value=settings.VALUE_SPIN)
                             reward_amount = play_data.get('spinResults', [{}])[0].get('rewardAmount', 0)
                             reward_type = play_data.get('spinResults', [{}])[0].get('rewardType', 'NO')
                             spins = play_data.get('gameConfig', {}).get('spinEnergyTotal', 0)
@@ -416,8 +416,8 @@ class Tapper:
                     if taps > boss_current_health:
                         taps = boss_max_health - boss_current_health - 10
                         return taps
-                    bot_config = await self._api.get_bot_config(http_client=http_client)
-                    telegram_me = await self._api.get_telegram_me(http_client=http_client)
+                    bot_config = await self._api.get_bot_config()
+                    telegram_me = await self._api.get_telegram_me()
 
                     available_energy = profile_data['currentEnergy']
                     need_energy = taps * profile_data['weaponLevel']
@@ -432,15 +432,15 @@ class Tapper:
                             file.write('This file indicates that the script has already run once.')
 
                     if first_check_clan():
-                        clan = await self._api.get_clan(http_client=http_client)
+                        clan = await self._api.get_clan()
                         set_first_run_check_clan()
                         await asyncio.sleep(1)
                         if clan is not False and clan != '71886d3b-1186-452d-8ac6-dcc5081ab204':
                             await asyncio.sleep(1)
-                            clan_leave = await self._api.leave_clan(http_client=http_client)
+                            clan_leave = await self._api.leave_clan()
                             if clan_leave is True:
                                 await asyncio.sleep(1)
-                                clan_join = await self._api.join_clan(http_client=http_client)
+                                clan_join = await self._api.join_clan()
                                 if clan_join is True:
                                     continue
                                 elif clan_join is False:
@@ -451,7 +451,7 @@ class Tapper:
                         elif clan == '71886d3b-1186-452d-8ac6-dcc5081ab204':
                             continue
                         else:
-                            clan_join = await self._api.join_clan(http_client=http_client)
+                            clan_join = await self._api.join_clan()
                             if clan_join is True:
                                 continue
                             elif clan_join is False:
@@ -459,23 +459,23 @@ class Tapper:
                                 continue
 
                     if telegram_me['isReferralInitialJoinBonusAvailable'] is True:
-                        await self._api.claim_referral_bonus(http_client=http_client)
+                        await self._api.claim_referral_bonus()
                         logger.info(f"{self.session_name} | 🔥Referral bonus was claimed")
 
                     if bot_config['isPurchased'] is False and settings.AUTO_BUY_TAPBOT is True:
-                        await self._api.upgrade_boost(http_client=http_client, boost_type=UpgradableBoostType.TAPBOT)
+                        await self._api.upgrade_boost(boost_type=UpgradableBoostType.TAPBOT)
                         logger.info(f"{self.session_name} | 👉 Tapbot was purchased - 😴 Sleep 7s")
                         await asyncio.sleep(delay=9)
-                        bot_config = await self._api.get_bot_config(http_client=http_client)
+                        bot_config = await self._api.get_bot_config()
 
                     if bot_config['isPurchased'] is True:
                         if bot_config['usedAttempts'] < bot_config['totalAttempts'] and not bot_config['endsAt']:
-                            await self._api.start_bot(http_client=http_client)
-                            bot_config = await self._api.get_bot_config(http_client=http_client)
+                            await self._api.start_bot()
+                            bot_config = await self._api.get_bot_config()
                             logger.info(f"{self.session_name} | 👉 Tapbot is started")
 
                         else:
-                            claim_result = await self._api.claim_bot(http_client=http_client)
+                            claim_result = await self._api.claim_bot()
                             if claim_result['isClaimed'] == False and claim_result['data']:
                                 logger.info(
                                     f"{self.session_name} | 👉 Tapbot was claimed - 😴 Sleep 7s before starting again")
@@ -484,10 +484,10 @@ class Tapper:
                                 await asyncio.sleep(delay=5)
 
                                 if bot_config['usedAttempts'] < bot_config['totalAttempts']:
-                                    await self._api.start_bot(http_client=http_client)
+                                    await self._api.start_bot()
                                     logger.info(f"{self.session_name} | 👉 Tapbot is started - 😴 Sleep 7s")
                                     await asyncio.sleep(delay=9)
-                                    bot_config = await self._api.get_bot_config(http_client=http_client)
+                                    bot_config = await self._api.get_bot_config()
 
                     if active_turbo:
                         taps += randint(a=settings.ADD_TAPS_ON_TURBO[0], b=settings.ADD_TAPS_ON_TURBO[1])
@@ -509,10 +509,10 @@ class Tapper:
                         logger.info(f"Sleep {sleep_between_clicks}s")
                         await asyncio.sleep(delay=sleep_between_clicks)
                         # update profile data
-                        profile_data = await self._api.get_profile_data(http_client=http_client)
+                        profile_data = await self._api.get_profile_data()
                         continue
 
-                    profile_data = await self._api.send_taps(http_client=http_client, nonce=nonce, taps=taps)
+                    profile_data = await self._api.send_taps(nonce=nonce, taps=taps)
 
                     if not profile_data:
                         continue
@@ -539,12 +539,12 @@ class Tapper:
                         logger.info(f"{self.session_name} | 😴 Sleep 10s")
                         await asyncio.sleep(delay=10)
 
-                        status = await self._api.set_next_boss(http_client=http_client)
+                        status = await self._api.set_next_boss()
                         if status is True:
                             logger.success(f"{self.session_name} | ✅ Successful setting next boss: "
                                            f"<m>{current_boss_level + 1}</m>")
 
-                    taps_status = await self._api.send_taps(http_client=http_client, nonce=nonce, taps=taps)
+                    taps_status = await self._api.send_taps(nonce=nonce, taps=taps)
                     taps_new_balance = taps_status['coinsAmount']
                     calc_taps = taps_new_balance - balance
                     if calc_taps > 0:
@@ -578,7 +578,7 @@ class Tapper:
                             logger.info(f"{self.session_name} | 😴 Sleep 7s before activating the daily energy boost")
                             #await asyncio.sleep(delay=9)
 
-                            status = await self._api.apply_boost(http_client=http_client, boost_type=FreeBoostType.ENERGY)
+                            status = await self._api.apply_boost(boost_type=FreeBoostType.ENERGY)
                             if status is True:
                                 logger.success(f"{self.session_name} | 👉 Energy boost applied")
 
@@ -590,7 +590,7 @@ class Tapper:
                             logger.info(f"{self.session_name} | 😴 Sleep 10s before activating the daily turbo boost")
                             await asyncio.sleep(delay=10)
 
-                            status = await self._api.apply_boost(http_client=http_client, boost_type=FreeBoostType.TURBO)
+                            status = await self._api.apply_boost(boost_type=FreeBoostType.TURBO)
                             if status is True:
                                 logger.success(f"{self.session_name} | 👉 Turbo boost applied")
 
@@ -604,8 +604,7 @@ class Tapper:
                         if settings.AUTO_UPGRADE_TAP is True and next_tap_level <= settings.MAX_TAP_LEVEL:
                             need_balance = 1000 * (2 ** (next_tap_level - 1))
                             if balance > need_balance:
-                                status = await self._api.upgrade_boost(http_client=http_client,
-                                                                  boost_type=UpgradableBoostType.TAP)
+                                status = await self._api.upgrade_boost(boost_type=UpgradableBoostType.TAP)
                                 if status is True:
                                     logger.success(f"{self.session_name} | Tap upgraded to {next_tap_level} lvl")
 
@@ -617,8 +616,7 @@ class Tapper:
                         if settings.AUTO_UPGRADE_ENERGY is True and next_energy_level <= settings.MAX_ENERGY_LEVEL:
                             need_balance = 1000 * (2 ** (next_energy_level - 1))
                             if balance > need_balance:
-                                status = await self._api.upgrade_boost(http_client=http_client,
-                                                                  boost_type=UpgradableBoostType.ENERGY)
+                                status = await self._api.upgrade_boost(boost_type=UpgradableBoostType.ENERGY)
                                 if status is True:
                                     logger.success(f"{self.session_name} | Energy upgraded to {next_energy_level} lvl")
 
@@ -633,8 +631,7 @@ class Tapper:
                             need_balance = 1000 * (2 ** (next_charge_level - 1))
 
                             if balance > need_balance:
-                                status = await self._api.upgrade_boost(http_client=http_client,
-                                                                  boost_type=UpgradableBoostType.CHARGE)
+                                status = await self._api.upgrade_boost(boost_type=UpgradableBoostType.CHARGE)
                                 if status is True:
                                     logger.success(f"{self.session_name} | Charge upgraded to {next_charge_level} lvl")
 
